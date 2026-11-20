@@ -1,0 +1,23 @@
+{
+  "name": "multisig-timelock-wallet",
+  "version": "1.0.0",
+  "description": "Multi-Signature Wallet with Time-Locked Transaction Execution (Solidity ^0.8.20, Hardhat, Ethers v6)",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "coverage": "hardhat coverage",
+    "demo": "hardhat run scripts/demo.js",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "serve": "npx serve frontend"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.10",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.11.1",
+    "hardhat": "^2.22.3",
+    "hardhat-gas-reporter": "^1.0.10",
+    "solidity-coverage": "^0.8.11"
+  }
+}

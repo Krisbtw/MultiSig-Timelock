@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MultiSig Timelock Wallet</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <!-- Ethers v6 UMD bundle from CDN (no build step needed) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.11.1/ethers.umd.min.js"></script>
+</head>
+<body>
+  <!-- Wrong Network Warning Banner -->
+  <div id="networkBanner" class="banner banner-danger hidden">
+    <div class="banner-inner">
+      <div class="banner-msg">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Wrong network detected (<strong id="wrongNetName">Unknown</strong>). Switch to <strong>Sepolia Testnet</strong> or Localhost (31337).</span>
+      </div>
+      <button id="switchSepoliaBtn" class="btn btn-danger btn-sm">Switch to Sepolia</button>
+    </div>
+  </div>
+
+  <!-- Non-Owner Read-Only Banner -->
+  <div id="nonOwnerBanner" class="banner banner-warning hidden">
+    <div class="banner-inner">
+      <div class="banner-msg">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>Read-only session: the connected account is not an active signatory on this vault.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Navigation Bar -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>MultiSig Timelock</h1>
+          <span class="brand-sub">Smart Contract Treasury</span>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <div class="contract-control">
+          <span class="control-label">Contract</span>
+          <input id="contractAddrInput" type="text" placeholder="0x..." spellcheck="false" aria-label="Contract Address" />
+          <button id="loadContractBtn" class="btn btn-ghost btn-sm" title="Load wallet at this address">Load</button>
+        </div>
+
+        <div class="divider-v" aria-hidden="true"></div>
+
+        <div class="wallet-status">
+          <span id="networkBadge" class="pill pill-neutral">Disconnected</span>
+          <span id="roleBadge" class="pill pill-neutral hidden">Viewer</span>
+          <span id="accountBadge" class="pill pill-mono">No Account</span>
+          <button id="connectBtn" class="btn btn-primary btn-sm">Connect Wallet</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="workspace">
+    <!-- Overview Metrics Row -->
+    <section class="metrics-grid" aria-label="Vault Overview">
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">Treasury Balance</span>
+          <svg class="icon-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        </div>
+        <div id="walletBalance" class="metric-value tabular">— ETH</div>
+        <div class="deposit-row">
+          <input id="depositAmount" type="number" step="0.001" min="0" placeholder="0.05" aria-label="Deposit amount in ETH" />
+          <button id="depositBtn" class="btn btn-outline btn-xs">Deposit ETH</button>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">Approval Threshold</span>
+          <svg class="icon-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <div id="walletThreshold" class="metric-value tabular">— of —</div>
+        <div id="ownersCountSub" class="metric-sub">Required signatures to queue</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">Time-Lock Delay</span>
+          <svg class="icon-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div id="walletDelay" class="metric-value tabular">—</div>
+        <div class="metric-sub">7-day execution grace window</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">Active Proposals</span>
+          <svg class="icon-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div id="pendingCountValue" class="metric-value tabular">0</div>
+        <div id="pendingCountSub" class="metric-sub">0 Pending · 0 Queued</div>
+      </div>
+    </section>
+
+    <!-- Segmented Navigation Bar -->
+    <div class="nav-row">
+      <nav class="segmented-tabs" role="tablist">
+        <button class="tab-btn active" data-tab="transactions" role="tab" aria-selected="true">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Transactions
+        </button>
+        <button class="tab-btn" data-tab="governance" role="tab" aria-selected="false">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Owners &amp; Governance
+        </button>
+        <button class="tab-btn" data-tab="activity" role="tab" aria-selected="false">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Activity Log
+        </button>
+      </nav>
+
+      <button id="refreshBtn" class="btn btn-outline btn-sm">
+        <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Refresh State
+      </button>
+    </div>
+
+    <!-- TAB 1: Transactions & Proposal Composer -->
+    <div id="tab-transactions" class="tab-panel active">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>New Transaction Proposal</h2>
+            <p class="panel-desc">Active signatories may submit an ETH transfer or contract call. The proposer's approval (1/M) is recorded automatically.</p>
+          </div>
+        </div>
+        <form id="proposeForm" class="form-grid">
+          <div class="field field-span-2">
+            <label for="propRecipient">Recipient Address</label>
+            <input id="propRecipient" type="text" placeholder="0x0000...0000" required spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="propAmount">Amount (ETH)</label>
+            <input id="propAmount" type="number" step="any" min="0" value="0.01" required />
+          </div>
+          <div class="field">
+            <label for="propData">Calldata (Hex)</label>
+            <input id="propData" type="text" placeholder="0x" value="0x" spellcheck="false" />
+          </div>
+          <div class="field field-span-3">
+            <label for="propNote">Reference Note</label>
+            <input id="propNote" type="text" placeholder="Describe the purpose of this transfer" required />
+          </div>
+          <div class="field field-submit">
+            <button id="proposeSubmitBtn" type="submit" class="btn btn-primary btn-block" disabled>
+              Submit Proposal
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Transaction Queue &amp; History</h2>
+            <p class="panel-desc">Ordered newest first. Hover over any disabled action for the on-chain precondition.</p>
+          </div>
+        </div>
+
+        <div id="txLoadingState" class="empty-state">
+          Connect MetaMask to load on-chain proposals and live timelock status.
+        </div>
+
+        <div class="table-wrap">
+          <table id="txTable" class="data-table hidden">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Proposal &amp; Proposer</th>
+                <th>Destination</th>
+                <th class="num">Value</th>
+                <th>Approvals</th>
+                <th>Status</th>
+                <th>Timelock</th>
+                <th class="actions-col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- TAB 2: Owners & Self-Governance -->
+    <div id="tab-governance" class="tab-panel">
+      <div class="split-grid">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Authorised Signatories</h2>
+              <p class="panel-desc">Current addresses in the on-chain <code>owners</code> registry (3 to 10 unique addresses).</p>
+            </div>
+          </div>
+          <ul id="ownersList" class="owners-list">
+            <li class="muted">Connect MetaMask to view active signatories.</li>
+          </ul>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Self-Governance Proposal (<code>onlySelf</code>)</h2>
+              <p class="panel-desc">Encodes a call targeting this wallet contract. Changes take effect only after M approvals and the timelock delay.</p>
+            </div>
+          </div>
+          <form id="govForm" class="stack-form">
+            <div class="field">
+              <label for="govAction">Action</label>
+              <select id="govAction">
+                <option value="addOwner">Add Owner — addOwner(address)</option>
+                <option value="removeOwner">Remove Owner — removeOwner(address)</option>
+                <option value="changeThreshold">Change Threshold — changeThreshold(uint256)</option>
+                <option value="changeDelay">Change Timelock Delay — changeDelay(uint256)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label id="govParamLabel" for="govParam">New Owner Address</label>
+              <input id="govParam" type="text" placeholder="0x..." required spellcheck="false" />
+            </div>
+            <div class="field">
+              <label for="govNote">Governance Note</label>
+              <input id="govNote" type="text" placeholder="e.g., Add 4th treasury signatory" required />
+            </div>
+            <button id="govSubmitBtn" type="submit" class="btn btn-primary" disabled>
+              Create Governance Proposal
+            </button>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <!-- TAB 3: Event Activity Log -->
+    <div id="tab-activity" class="tab-panel">
+      <section class="panel">
+        <div class="panel-header panel-header-flex">
+          <div>
+            <h2>On-Chain Activity Log</h2>
+            <p class="panel-desc">Immutable event stream emitted by <code>MultiSigTimelockWallet</code> with Sepolia Etherscan transaction links.</p>
+          </div>
+          <div class="filter-group">
+            <label for="eventFilterSelect">Event Type</label>
+            <select id="eventFilterSelect">
+              <option value="ALL">All Events</option>
+              <option value="Deposited">Deposited</option>
+              <option value="Submitted">Submitted</option>
+              <option value="Approved">Approved</option>
+              <option value="Revoked">Revoked</option>
+              <option value="Queued">Queued</option>
+              <option value="Executed">Executed</option>
+              <option value="Cancelled">Cancelled</option>
+              <option value="GOVERNANCE">Governance</option>
+            </select>
+          </div>
+        </div>
+        <ul id="activityFeed" class="activity-list">
+          <li class="muted">No events loaded yet.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <!-- Toast Stack -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
